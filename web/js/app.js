@@ -40,6 +40,92 @@ async function toggleExposure(){
 }
 // Experimental: relative north heading; deviceorientation alpha can still be magnetically corrected.
 let northReference=null;
+// Two-point handheld FoV calibration, independent for each active camera.
+const FOV_INSET=0.08;
+let fovState='idle',fovFirst=null;
+function fovCameraKey(){
+  const track=stream?.getVideoTracks()[0];if(!track)return null;
+  const s=track.getSettings();
+  // Avoid persisting position/coordinate information.
+  return `suntrace.fov.v1:${track.label}:${s.width}x${s.height}:zoom${s.zoom??1}`;
+}
+function loadCameraFov(){
+  const key=fovCameraKey();if(!key)return;
+  $('fovVertical').value='55';refreshLabels();
+  let saved=null;try{saved=Number(localStorage.getItem(key));}catch(_e){}
+  if(saved!==null&&Number.isFinite(saved)&&saved>=20&&saved<=150){
+    $('fovVertical').value=String(saved);refreshLabels();
+    $('fovResult').textContent=`このカメラの保存済み垂直画角 ${saved.toFixed(1)}° を読み込みました。`;
+  }else{
+    $('fovResult').textContent='このカメラの画角は未測定です。';
+  }
+}
+function fovRoll(b){return Math.asin(Math.max(-1,Math.min(1,b.right.z)))/DEG;}
+function showFovGuide(){
+  const guide=$('fovGuide'),rect=displayRect();
+  if(fovState==='idle'||!rect){guide.hidden=true;return;}
+  guide.hidden=false;
+  guide.setAttribute('viewBox',`0 0 ${$('stage').clientWidth} ${$('stage').clientHeight}`);
+  const y=rect.y+rect.h/2;
+  const x=rect.x+rect.w*(fovState==='left'?FOV_INSET:1-FOV_INSET);
+  $('fovLine').setAttribute('x1',rect.x);$('fovLine').setAttribute('x2',rect.x+rect.w);
+  $('fovLine').setAttribute('y1',y);$('fovLine').setAttribute('y2',y);
+  $('fovMarker').setAttribute('cx',x);$('fovMarker').setAttribute('cy',y);
+  $('fovMarkerLabel').textContent=fovState==='left'?'① LEFT':'② RIGHT';
+  $('fovMarkerLabel').setAttribute('x',x);$('fovMarkerLabel').setAttribute('y',y-20);
+}
+function setFovState(state){
+  fovState=state;
+  $('beginFov').textContent=state==='idle'?'画角測定を開始':state==='left'?'① 左側の照準で登録':'② 右側の照準で計測';
+  $('cancelFov').disabled=state==='idle';
+  showFovGuide();
+}
+function cancelFovCalibration(){fovFirst=null;setFovState('idle');}
+function beginFovCalibration(){
+  if(!stream||!getBasis()||!displayRect()){
+    $('fovResult').textContent='カメラと姿勢センサーを起動し、iPhoneを縦向きにしてください。';return;
+  }
+  fovFirst=null;setFovState('left');
+  $('fovResult').textContent='遠方の目印を水平線上の左側照準に合わせ、①を押してください。';
+}
+function fovRegistration(){
+  if(fovState==='idle'){beginFovCalibration();return;}
+  const b=getBasis();
+  if(!b||!displayRect()){cancelFovCalibration();$('fovResult').textContent='姿勢が取得できません。';return;}
+  const alt=altitude(b.forward),roll=fovRoll(b);
+  if(Math.abs(alt)>35||Math.abs(roll)>4){
+    $('fovResult').textContent=`姿勢を修正してください（カメラ仰角 ${fmt(alt)}、ロール ${fmt(roll)}）。上下±35°、傾き±4°以内が目安。`;
+    return;
+  }
+  const sample={az:bearing(b.forward),alt,roll,cam:fovCameraKey()};
+  if(fovState==='left'){
+    fovFirst=sample;setFovState('right');
+    $('fovResult').textContent=`左側を記録（方位 ${fmt(sample.az)}）。同じ目印を水平線上の右側照準に合わせて②を押してください。`;
+    return;
+  }
+  if(!fovFirst||fovFirst.cam!==sample.cam){cancelFovCalibration();$('fovResult').textContent='カメラが変更されました。最初から測り直してください。';return;}
+  const bearingDifference=Math.abs(diff(sample.az-fovFirst.az));
+  const pitchDifference=Math.abs(sample.alt-fovFirst.alt);
+  const rollDifference=Math.abs(sample.roll-fovFirst.roll);
+  if(pitchDifference>3||rollDifference>3){
+    $('fovResult').textContent=`高さ・傾きが変わりました（仰角差 ${fmt(pitchDifference)}、ロール差 ${fmt(rollDifference)}）。水平に戻して再登録してください。`;
+    return;
+  }
+  const rect=displayRect();
+  // Pinhole model: marker horizontal offsets ±(1/2-inset) from image centre.
+  const horizontal=2*Math.atan(Math.tan(bearingDifference*DEG/2)/(1-2*FOV_INSET))/DEG;
+  const vertical=2*Math.atan(Math.tan(horizontal*DEG/2)*rect.h/rect.w)/DEG;
+  if(!(bearingDifference>5&&bearingDifference<125&&vertical>=20&&vertical<=150)){
+    $('fovResult').textContent=`測定結果が範囲外です（回転 ${fmt(bearingDifference)} / 垂直画角 ${fmt(vertical)}）。向き・カメラ選択を確認してください。`;
+    return;
+  }
+  const rounded=Math.round(vertical*10)/10;
+  $('fovVertical').value=String(rounded);
+  try{const key=fovCameraKey();if(key)localStorage.setItem(key,String(rounded));}catch(_e){}
+  cancelFovCalibration();refreshLabels();
+  $('fovResult').textContent=`測定完了：方位差 ${fmt(bearingDifference)} / 水平画角 ${fmt(horizontal)} / 垂直画角 ${fmt(rounded)}。このカメラ用に保存しました。`;
+}
+
 function message(s){$('message').textContent=s;}
 function fail(prefix,e){message(`${prefix}: ${e?.name||'Error'} / ${e?.message||String(e)}`);}
 window.addEventListener('error',e=>message(`JSエラー: ${e.message} (${e.lineno})`));
@@ -133,6 +219,7 @@ function drawAR(){
   svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
   circle.setAttribute('visibility','hidden');paths.replaceChildren();labels.replaceChildren();
   const basis=getBasis(),rect=displayRect();
+  showFovGuide();
   $('cameraAz').textContent=basis?fmt(bearing(basis.forward)):'—';
   $('headingSource').textContent=northReference===null?'コンパス基準':'真北登録基準';
   $('cameraAlt').textContent=basis?fmt(altitude(basis.forward)):'—';
@@ -194,7 +281,7 @@ function videoInfo(){
   $('resolution').textContent=`${s.width||'?'} × ${s.height||'?'} px`;
   $('zoomInfo').textContent=`${s.zoom??'不明'} / ${cap.zoom?`${cap.zoom.min}〜${cap.zoom.max}`:'非公開'}`;
   $('cameraInfo').textContent=`${track.label||'カメラ'} / ${s.width||'?'}×${s.height||'?'} / zoom=${s.zoom??'?'}（切り抜きなし）`;
-  updateExposureInfo();drawAR();
+  updateExposureInfo();loadCameraFov();drawAR();
 }
 async function refreshCameras(){
   try{
@@ -208,6 +295,7 @@ async function refreshCameras(){
 }
 async function openCamera(deviceId){
   if(switching)return;
+  cancelFovCalibration();
   cancelTimedPhoto(false);
   switching=true;$('cameraSelect').disabled=true;
   stream?.getTracks().forEach(t=>t.stop());stream=null;$('camera').srcObject=null;
@@ -229,6 +317,7 @@ async function start(){
   if(result==='granted')setTimeout(()=>{if(!orient)message('姿勢データが届いていません。Safariの権限を確認してください。');},3500);
 }
 function stop(){
+  cancelFovCalibration();
   cancelTimedPhoto(false);
   if(attached){window.removeEventListener('deviceorientation',onOrientation);attached=false;}
   stream?.getTracks().forEach(t=>t.stop());stream=null;$('camera').srcObject=null;orient=null;
@@ -422,6 +511,8 @@ for(const b of document.querySelectorAll('[data-season]'))b.addEventListener('cl
 $('savePhoto').addEventListener('click',startTimedPhoto);
 $('cancelPhotoTimer').addEventListener('click',()=>cancelTimedPhoto());
 $('dimExposure').addEventListener('click',toggleExposure);
+$('beginFov').addEventListener('click',fovRegistration);
+$('cancelFov').addEventListener('click',()=>{cancelFovCalibration();$('fovResult').textContent='測定をキャンセルしました。';});
 $('dateTime').addEventListener('change',updateSun);
 for(const id of ['yawOffset','pitchOffset','fovVertical'])$(id).addEventListener('input',refreshLabels);
 $('centerSun').addEventListener('click',centerSun);
