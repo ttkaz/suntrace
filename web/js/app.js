@@ -7,6 +7,8 @@ const diff=a=>((a+540)%360)-180;
 let stream=null, geoPosition=null, orient=null, compassAccuracy=null;
 let starting=false,switching=false,attached=false,selectedCameraId='';
 let latestSun=null;
+// Experimental: relative north heading; deviceorientation alpha can still be magnetically corrected.
+let northReference=null;
 function message(s){$('message').textContent=s;}
 function fail(prefix,e){message(`${prefix}: ${e?.name||'Error'} / ${e?.message||String(e)}`);}
 window.addEventListener('error',e=>message(`JSエラー: ${e.message} (${e.lineno})`));
@@ -30,7 +32,9 @@ function getBasis(){
   let up=w3cRotation(vector(0,1,0),orient.alpha,orient.beta,orient.gamma);
   // iOS compass heading is treated as the portrait back-camera bearing; this
   // assumption MUST be checked and corrected with on-site calibration.
-  const yaw=diff(bearing(forward)-orient.heading)-Number($('yawOffset').value);
+  const yaw=(northReference===null
+    ? diff(bearing(forward)-orient.heading)
+    : northReference)-Number($('yawOffset').value);
   forward=rotZ(forward,yaw*DEG);right=rotZ(right,yaw*DEG);up=rotZ(up,yaw*DEG);
   // Pitch around camera-right axis, preserving an orthonormal screen basis.
   const p=Number($('pitchOffset').value)*DEG, c=Math.cos(p),s=Math.sin(p);
@@ -67,6 +71,7 @@ function drawAR(){
   svg.setAttribute('viewBox',`0 0 ${w} ${h}`);circle.setAttribute('visibility','hidden');paths.replaceChildren();
   const basis=getBasis(),rect=displayRect();
   $('cameraAz').textContent=basis?fmt(bearing(basis.forward)):'—';
+  $('headingSource').textContent=northReference===null?'コンパス基準':'真北登録基準';
   $('cameraAlt').textContent=basis?fmt(altitude(basis.forward)):'—';
   $('imageRect').textContent=rect?`${Math.round(rect.w)}×${Math.round(rect.h)} / x=${Math.round(rect.x)}, y=${Math.round(rect.y)}`:'—';
   if(!basis||!rect||!latestSun){$('viewHint').textContent='GPS・姿勢・カメラ映像の取得待ち（縦向きのみ）';return;}
@@ -157,6 +162,18 @@ function calibrationStatus(text){
   $('calibrationResult').textContent=text;
   message(text);
 }
+function calibrateNorth(){
+  if(!orient){calibrationStatus('真北校正不可：姿勢センサーが未取得です。');return;}
+  if(screenAngle()!==0){calibrationStatus('真北校正不可：iPhoneを縦向きにしてください。');return;}
+  // Capture uncorrected raw orientation rather than the magnetic heading.
+  const raw=w3cRotation(vector(0,0,-1),orient.alpha,orient.beta,orient.gamma);
+  if(Math.abs(altitude(raw))>60){calibrationStatus('真北校正不可：カメラをもう少し水平に向けてください。');return;}
+  northReference=bearing(raw);
+  $('yawOffset').value='0';$('pitchOffset').value='0';
+  refreshLabels();
+  const b=getBasis(),residual=diff(bearing(b.forward));
+  calibrationStatus(`真北基準登録：方位 ${fmt(bearing(b.forward))}、残差 ${fmt(residual)}、仰角 ${fmt(altitude(b.forward))}。東・南・西へ回してから北へ戻し、再現性を確認してください。`);
+}
 function centerSun(){
   if(!orient){calibrationStatus('校正不可：姿勢センサーが未取得です。');return;}
   if(!geoPosition||!latestSun){calibrationStatus('校正不可：GPSと太陽位置が未取得です。');return;}
@@ -166,6 +183,8 @@ function centerSun(){
   const ageMinutes=Math.abs(Date.now()-date.getTime())/60000;
   if(ageMinutes>10){calibrationStatus(`校正不可：予測日時が現在から${ageMinutes.toFixed(1)}分ずれています。「現在」を押してください。`);return;}
   if(latestSun.altitude<=0){calibrationStatus('校正不可：現在の太陽が地平線の下です。');return;}
+  // Solar calibration restores the existing compass-based heading model.
+  northReference=null;
   // Start from zero offsets to measure the uncalibrated discrepancy.
   $('yawOffset').value='0';$('pitchOffset').value='0';
   const base=getBasis();
@@ -196,7 +215,8 @@ $('refreshCameras').addEventListener('click',refreshCameras);$('now').addEventLi
 $('dateTime').addEventListener('change',updateSun);
 for(const id of ['yawOffset','pitchOffset','fovVertical'])$(id).addEventListener('input',refreshLabels);
 $('centerSun').addEventListener('click',centerSun);
-$('resetCalibration').addEventListener('click',()=>{for(const id of ['yawOffset','pitchOffset'])$(id).value='0';$('fovVertical').value='55';refreshLabels();calibrationStatus('補正をリセットしました。');});
+$('calibrateNorth').addEventListener('click',calibrateNorth);
+$('resetCalibration').addEventListener('click',()=>{northReference=null;for(const id of ['yawOffset','pitchOffset'])$(id).value='0';$('fovVertical').value='55';refreshLabels();calibrationStatus('補正をリセットしました。');});
 window.addEventListener('orientationchange',updateScreen);window.addEventListener('resize',drawAR);
 $('camera').addEventListener('loadedmetadata',videoInfo);
 updateScreen();setNow();refreshLabels();

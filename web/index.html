@@ -1,21 +1,24 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#102e35">
-<title>ひだまり | SunTrace v0.5.1</title><link rel="stylesheet" href="./css/style.css?v=0.5.2">
-<script defer src="./js/solar.js?v=0.5.2"></script><script defer src="./js/app.js?v=0.5.2"></script></head>
+<title>ひだまり | SunTrace v0.5.3</title><link rel="stylesheet" href="./css/style.css?v=0.5.3">
+<script defer src="./js/solar.js?v=0.5.3"></script><script defer src="./js/app.js?v=0.5.3"></script></head>
 <body><main class="app">
 <div class="camera-stage" id="stage"><video id="camera" autoplay muted playsinline></video><svg id="arOverlay" aria-label="太陽軌道試験表示"><g id="pathSegments"></g><circle id="sunCircle" r="9" fill="#ffcf5a" stroke="#fff4cf" stroke-width="2" visibility="hidden"/></svg><div class="crosshair">＋</div><p id="viewHint" class="stage-caption">v0.5 · ARは未校正（実測・判定には使わない）</p></div>
-<header><div><strong>☀ ひだまり</strong><small>SunTrace v0.5.1 / 校正診断</small></div><span id="status">開始待ち</span></header>
+<header><div><strong>☀ ひだまり</strong><small>SunTrace v0.5.3 / 校正診断</small></div><span id="status">開始待ち</span></header>
 <section class="panel">
 <div class="actions"><button id="start">開始</button><button id="stop" disabled>停止</button><button id="locate">GPS取得</button></div>
 <div class="cameraRow"><label for="cameraSelect">カメラ（まず通常の背面広角で検証）</label><div class="selectRow"><select id="cameraSelect" disabled><option>開始後に一覧取得</option></select><button id="refreshCameras" disabled>再取得</button></div><p id="cameraInfo" class="minor">起動後にカメラ情報を表示</p></div>
 <div class="dateRow"><label for="dateTime">予測日時</label><input type="datetime-local" id="dateTime"><button id="now">現在</button></div>
 <div class="metrics"><span>太陽方位<b id="sunAz">—</b></span><span>太陽高度<b id="sunAlt">—</b></span><span>カメラ方位<b id="cameraAz">—</b></span></div>
+<p class="minor">方位基準：<b id="headingSource">コンパス基準</b></p>
 <div class="metrics submetrics"><span>カメラ仰角<b id="cameraAlt">—</b></span><span>コンパス精度<b id="accuracy">—</b></span><span>画面回転<b id="screen">—</b></span></div>
 <details id="calibration" open><summary>AR校正・画角調整</summary>
 <p class="minor">画面を縦向きに保持。はじめは広角カメラを選択し、屋外で太陽方向に合わせてください。補正はカメラごとに保存されません。</p>
 <label for="yawOffset">方位補正 <output id="yawValue">0°</output></label><input type="range" id="yawOffset" min="-180" max="180" step="0.5" value="0">
 <label for="pitchOffset">仰角補正 <output id="pitchValue">0°</output></label><input type="range" id="pitchOffset" min="-90" max="90" step="0.5" value="0">
 <label for="fovVertical">垂直画角（仮値） <output id="fovValue">55°</output></label><input type="range" id="fovVertical" min="25" max="100" step="1" value="55">
+<p class="minor">【夜間テスト】既知の真北にカメラ中央を合わせて登録 → 東90°・南180°・西270° → 北0°へ戻して方位を確認。再読み込みで基準解除。</p>
+<div class="actions calibrationActions"><button id="calibrateNorth">真北方向を登録（夜間OK）</button></div>
 <div class="actions calibrationActions"><button id="centerSun">現在の太陽を画面中央に合わせて校正</button><button id="resetCalibration">補正リセット</button></div>
 <p id="calibrationResult" class="calibration-result" role="status" aria-live="polite">校正待ち：実際の太陽を画面中央に合わせてください。</p>
 <p class="minor">中央校正は、実際の太陽がカメラ映像の中央にある場合だけ使用。太陽を長時間直視・撮影しないでください。時刻を現在に戻しGPS取得後に利用できます。</p>
