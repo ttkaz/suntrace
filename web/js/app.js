@@ -30,7 +30,7 @@ function getBasis(){
   let up=w3cRotation(vector(0,1,0),orient.alpha,orient.beta,orient.gamma);
   // iOS compass heading is treated as the portrait back-camera bearing; this
   // assumption MUST be checked and corrected with on-site calibration.
-  const yaw=diff(orient.heading-bearing(forward))+Number($('yawOffset').value);
+  const yaw=diff(bearing(forward)-orient.heading)-Number($('yawOffset').value);
   forward=rotZ(forward,yaw*DEG);right=rotZ(right,yaw*DEG);up=rotZ(up,yaw*DEG);
   // Pitch around camera-right axis, preserving an orthonormal screen basis.
   const p=Number($('pitchOffset').value)*DEG, c=Math.cos(p),s=Math.sin(p);
