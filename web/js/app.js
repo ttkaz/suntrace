@@ -63,8 +63,8 @@ function loadCameraFov(){
 function fovRoll(b){return Math.asin(Math.max(-1,Math.min(1,b.right.z)))/DEG;}
 function showFovGuide(){
   const guide=$('fovGuide'),rect=displayRect();
-  if(fovState==='idle'||!rect){guide.hidden=true;return;}
-  guide.hidden=false;
+  if(fovState==='idle'||!rect){guide.setAttribute('hidden','');return;}
+  guide.removeAttribute('hidden');
   guide.setAttribute('viewBox',`0 0 ${$('stage').clientWidth} ${$('stage').clientHeight}`);
   const y=rect.y+rect.h/2;
   const x=rect.x+rect.w*(fovState==='left'?FOV_INSET:1-FOV_INSET);
