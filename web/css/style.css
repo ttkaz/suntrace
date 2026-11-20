@@ -12,3 +12,14 @@
 .photoResult[hidden]{display:none}
 .photoResult img{display:block;width:100%;max-height:270px;object-fit:contain;background:#02090c}
 .photoResult a{color:#ffdc80}
+
+/* v0.6.2: handheld photo countdown */
+.captureControls{display:flex;align-items:center;gap:12px;margin-top:10px}
+.captureControls label{margin:0;white-space:nowrap}
+.captureControls select{flex:1;min-width:0;background:#e7f1f2;color:#17333c;border:0;border-radius:7px;padding:9px}
+.captureActions #savePhoto{flex:3;min-height:48px}
+.captureActions #cancelPhotoTimer{flex:1;min-height:48px;background:#d3e0e1}
+.photo-countdown[hidden]{display:none}
+.photo-countdown{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;background:#07182055;pointer-events:none;color:white;text-shadow:0 2px 12px #000;z-index:4}
+.photo-countdown span{font-size:clamp(76px,25vw,160px);font-weight:800;line-height:1}
+.photo-countdown small{font-size:16px;font-weight:700}

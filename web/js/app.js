@@ -207,7 +207,9 @@ async function refreshCameras(){
   }catch(e){fail('カメラ一覧取得',e);}
 }
 async function openCamera(deviceId){
-  if(switching)return;switching=true;$('cameraSelect').disabled=true;
+  if(switching)return;
+  cancelTimedPhoto(false);
+  switching=true;$('cameraSelect').disabled=true;
   stream?.getTracks().forEach(t=>t.stop());stream=null;$('camera').srcObject=null;
   exposureDimmed=false;exposureOriginal=null;
   try{
@@ -227,6 +229,7 @@ async function start(){
   if(result==='granted')setTimeout(()=>{if(!orient)message('姿勢データが届いていません。Safariの権限を確認してください。');},3500);
 }
 function stop(){
+  cancelTimedPhoto(false);
   if(attached){window.removeEventListener('deviceorientation',onOrientation);attached=false;}
   stream?.getTracks().forEach(t=>t.stop());stream=null;$('camera').srcObject=null;orient=null;
   exposureDimmed=false;exposureOriginal=null;updateExposureInfo();
@@ -297,6 +300,55 @@ function centerSun(){
 }
 
 let previewObjectUrl=null;
+let photoTimerActive=false;
+let photoTimerToken=0;
+let photoTimerHandle=null;
+function showPhotoCountdown(remaining){
+  const overlay=$('photoCountdown');
+  overlay.hidden=remaining===null;
+  if(remaining!==null)$('countdownNumber').textContent=String(remaining);
+}
+function cancelTimedPhoto(announce=true){
+  photoTimerToken++;
+  if(photoTimerHandle!==null){clearTimeout(photoTimerHandle);photoTimerHandle=null;}
+  const wasActive=photoTimerActive;
+  photoTimerActive=false;
+  showPhotoCountdown(null);
+  $('savePhoto').disabled=false;
+  $('photoTimer').disabled=false;
+  $('cancelPhotoTimer').disabled=true;
+  if(announce&&wasActive)message('セルフタイマーをキャンセルしました。');
+}
+function startTimedPhoto(){
+  if(photoTimerActive)return;
+  if(!stream||!displayRect()||!getBasis()||!geoPosition){
+    message('撮影にはカメラ・GPS・姿勢情報が必要です。');return;
+  }
+  const delay=Number($('photoTimer').value);
+  if(![0,3,10].includes(delay)){message('タイマー設定を確認してください。');return;}
+  if(delay===0){void savePhoto();return;}
+  photoTimerActive=true;
+  $('savePhoto').disabled=true;
+  $('photoTimer').disabled=true;
+  $('cancelPhotoTimer').disabled=false;
+  const token=++photoTimerToken;
+  const deadline=performance.now()+delay*1000;
+  message(`${delay}秒タイマーを開始しました。撮影位置に構えてください。`);
+  const tick=()=>{
+    if(token!==photoTimerToken)return;
+    const remaining=Math.max(0,Math.ceil((deadline-performance.now())/1000));
+    if(remaining===0){
+      photoTimerHandle=null;
+      cancelTimedPhoto(false);
+      // Capture the current frame and orientation, not values from the button press.
+      void savePhoto();
+      return;
+    }
+    showPhotoCountdown(remaining);
+    photoTimerHandle=setTimeout(tick,Math.min(250,Math.max(50,deadline-performance.now())));
+  };
+  tick();
+}
 async function savePhoto(){
   const video=$('camera'),rect=displayRect(),basis=getBasis();
   if(!stream||!rect||!basis||!geoPosition){message('撮影にはカメラ・GPS・姿勢情報が必要です。');return;}
@@ -367,7 +419,8 @@ $('targetDate').addEventListener('change',e=>selectDay(e.target.value));
 for(const b of document.querySelectorAll('[data-season]'))b.addEventListener('click',()=>{
   const [m,d]=b.dataset.season.split('-').map(Number);chooseSeason(m,d);
 });
-$('savePhoto').addEventListener('click',savePhoto);
+$('savePhoto').addEventListener('click',startTimedPhoto);
+$('cancelPhotoTimer').addEventListener('click',()=>cancelTimedPhoto());
 $('dimExposure').addEventListener('click',toggleExposure);
 $('dateTime').addEventListener('change',updateSun);
 for(const id of ['yawOffset','pitchOffset','fovVertical'])$(id).addEventListener('input',refreshLabels);
