@@ -153,20 +153,42 @@ function locate(){
   },e=>{$('locate').disabled=false;message(`GPSエラー (${e.code}): ${e.message}`);},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
 }
 function refreshLabels(){for(const [key,output] of [['yawOffset','yawValue'],['pitchOffset','pitchValue'],['fovVertical','fovValue']])$(output).textContent=`${$(key).value}°`;drawAR();}
+function calibrationStatus(text){
+  $('calibrationResult').textContent=text;
+  message(text);
+}
 function centerSun(){
-  if(!orient||!latestSun||!getBasis()){message('姿勢センサーとGPSが必要です。縦向きにしてください。');return;}
-  if(latestSun.altitude<=0){message('太陽が地平線より下にあります。');return;}
+  if(!orient){calibrationStatus('校正不可：姿勢センサーが未取得です。');return;}
+  if(!geoPosition||!latestSun){calibrationStatus('校正不可：GPSと太陽位置が未取得です。');return;}
+  if(!getBasis()){calibrationStatus('校正不可：iPhoneを縦向きにしてください。');return;}
   const date=new Date($('dateTime').value);
-  if(Math.abs(Date.now()-date.getTime())>10*60000){message('校正前に「現在」を押してください（選択日時と現在が10分以上異なります）。');return;}
-  // Reset first, then align modeled camera bearing and altitude to actual Sun.
-  $('yawOffset').value=0;$('pitchOffset').value=0;
-  const base=getBasis();if(!base)return;
-  const dyaw=diff(latestSun.azimuth-bearing(base.forward));
-  const dpitch=latestSun.altitude-altitude(base.forward);
-  if(Math.abs(dyaw)>90||Math.abs(dpitch)>45){message('補正範囲外です。端末を太陽方向へ向けてから試してください。');return;}
-  $('yawOffset').value=(Math.round(dyaw*2)/2).toString();
-  $('pitchOffset').value=(Math.round(dpitch*2)/2).toString();
-  refreshLabels();message('中央校正値を設定しました。これは1点校正です。向きを変えたときの整合性を確認してください。');
+  if(!Number.isFinite(date.getTime())){calibrationStatus('校正不可：予測日時が無効です。');return;}
+  const ageMinutes=Math.abs(Date.now()-date.getTime())/60000;
+  if(ageMinutes>10){calibrationStatus(`校正不可：予測日時が現在から${ageMinutes.toFixed(1)}分ずれています。「現在」を押してください。`);return;}
+  if(latestSun.altitude<=0){calibrationStatus('校正不可：現在の太陽が地平線の下です。');return;}
+  // Start from zero offsets to measure the uncalibrated discrepancy.
+  $('yawOffset').value='0';$('pitchOffset').value='0';
+  const base=getBasis();
+  if(!base){calibrationStatus('校正不可：姿勢を計算できません。');return;}
+  const beforeAz=diff(latestSun.azimuth-bearing(base.forward));
+  const beforeAlt=latestSun.altitude-altitude(base.forward);
+  const yaw=Number((Math.round(beforeAz*2)/2).toFixed(1));
+  // Rotation around screen-right can affect both elevation and azimuth when
+  // device roll is present. This is a one-point approximation, not a full solve.
+  const pitch=Number((Math.round(beforeAlt*2)/2).toFixed(1));
+  // Never let HTML range controls silently clamp a requested calibration.
+  const yawRange=$('yawOffset'), pitchRange=$('pitchOffset');
+  if(yaw<Number(yawRange.min)||yaw>Number(yawRange.max)||pitch<Number(pitchRange.min)||pitch>Number(pitchRange.max)){
+    refreshLabels();
+    calibrationStatus(`校正失敗：必要補正 方位 ${fmt(beforeAz)} / 仰角 ${fmt(beforeAlt)} がスライダー範囲外です。`);
+    return;
+  }
+  yawRange.value=String(yaw);pitchRange.value=String(pitch);
+  refreshLabels();
+  const corrected=getBasis();
+  const afterAz=diff(latestSun.azimuth-bearing(corrected.forward));
+  const afterAlt=latestSun.altitude-altitude(corrected.forward);
+  calibrationStatus(`校正実行：補正前 方位差 ${fmt(beforeAz)} / 高度差 ${fmt(beforeAlt)} → 補正後 方位差 ${fmt(afterAz)} / 高度差 ${fmt(afterAlt)}。方位・高度の残差が大きければ姿勢モデルの追加修正が必要です。`);
 }
 $('start').addEventListener('click',start);$('stop').addEventListener('click',stop);$('locate').addEventListener('click',locate);
 $('cameraSelect').addEventListener('change',e=>{for(const id of ['yawOffset','pitchOffset'])$(id).value='0';refreshLabels();openCamera(e.target.value);});
@@ -174,7 +196,7 @@ $('refreshCameras').addEventListener('click',refreshCameras);$('now').addEventLi
 $('dateTime').addEventListener('change',updateSun);
 for(const id of ['yawOffset','pitchOffset','fovVertical'])$(id).addEventListener('input',refreshLabels);
 $('centerSun').addEventListener('click',centerSun);
-$('resetCalibration').addEventListener('click',()=>{for(const id of ['yawOffset','pitchOffset'])$(id).value='0';$('fovVertical').value='55';refreshLabels();message('補正をリセットしました。');});
+$('resetCalibration').addEventListener('click',()=>{for(const id of ['yawOffset','pitchOffset'])$(id).value='0';$('fovVertical').value='55';refreshLabels();calibrationStatus('補正をリセットしました。');});
 window.addEventListener('orientationchange',updateScreen);window.addEventListener('resize',drawAR);
 $('camera').addEventListener('loadedmetadata',videoInfo);
 updateScreen();setNow();refreshLabels();
