@@ -302,13 +302,15 @@ async function savePhoto(){
   if(!stream||!rect||!basis||!geoPosition){message('撮影にはカメラ・GPS・姿勢情報が必要です。');return;}
   if(!video.videoWidth||!video.videoHeight){message('カメラ画像の準備中です。');return;}
   drawAR();
+  // Save only the actual camera image, not the letterboxed preview stage.
   const stage=$('stage');
-  const scale=Math.min(3,Math.max(1,video.videoHeight/Math.max(rect.h,1)));
-  const W=Math.round(stage.clientWidth*scale),H=Math.round(stage.clientHeight*scale);
+  const W=video.videoWidth,H=video.videoHeight;
   const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
   const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#03080b';ctx.fillRect(0,0,W,H);
-  ctx.scale(scale,scale);
+  // Convert stage coordinates to camera-image coordinates consistently
+  // for both the live frame and the SVG sun path / hour labels.
+  const sx=W/rect.w,sy=H/rect.h;
+  ctx.setTransform(sx,0,0,sy,-rect.x*sx,-rect.y*sy);
   ctx.drawImage(video,rect.x,rect.y,rect.w,rect.h);
   // Native SVG serialisation preserves the exact AR overlay rendering.
   const svgCopy=$('arOverlay').cloneNode(true);
@@ -324,14 +326,24 @@ async function savePhoto(){
     ctx.drawImage(img,0,0,stage.clientWidth,stage.clientHeight);
   }catch(e){message('AR合成に失敗しました。画像は保存していません。');return;}
   finally{URL.revokeObjectURL(svgUrl);}
+  // Labels use camera pixel coordinates rather than stage coordinates.
+  ctx.setTransform(1,0,0,1,0,0);
   // Add the modeled target date and actual capture date, without embedding GPS.
   const label=`対象 ${targetLabel()}`;
   const taken=`撮影 ${localDateTimeValue(new Date()).replace('T',' ')}`;
-  ctx.font='bold 13px -apple-system, sans-serif';
-  const labelWidth=Math.max(ctx.measureText(label).width,ctx.measureText(taken).width);
-  ctx.fillStyle='rgba(8,28,35,.84)';ctx.fillRect(7,7,labelWidth+20,46);
-  ctx.fillStyle='#fff';ctx.fillText(label,17,25);
-  ctx.font='11px -apple-system, sans-serif';ctx.fillStyle='#e3e9eb';ctx.fillText(taken,17,43);
+  const fs=Math.max(14,Math.round(W/30)),small=Math.max(11,Math.round(fs*.8));
+  const pad=Math.max(7,Math.round(W*.018)),gap=Math.max(5,Math.round(fs*.4));
+  ctx.font=`bold ${fs}px -apple-system, sans-serif`;
+  const titleWidth=ctx.measureText(label).width;
+  ctx.font=`${small}px -apple-system, sans-serif`;
+  const takenWidth=ctx.measureText(taken).width;
+  const boxWidth=Math.min(W-2*pad,Math.max(titleWidth,takenWidth)+3*pad);
+  const boxHeight=fs+small+gap+2*pad;
+  ctx.fillStyle='rgba(8,28,35,.84)';ctx.fillRect(pad,pad,boxWidth,boxHeight);
+  ctx.fillStyle='#fff';ctx.font=`bold ${fs}px -apple-system, sans-serif`;
+  ctx.fillText(label,pad*2,pad*2+fs,boxWidth-2*pad);
+  ctx.font=`${small}px -apple-system, sans-serif`;ctx.fillStyle='#e3e9eb';
+  ctx.fillText(taken,pad*2,pad*2+fs+gap+small,boxWidth-2*pad);
   const png=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
   if(!png){message('PNG生成に失敗しました。');return;}
   if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);
