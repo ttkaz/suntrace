@@ -1,45 +1,28 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#102e35">
-  <title>ひだまり | SunTrace v0.2</title>
-  <link rel="stylesheet" href="./css/style.css?v=0.2.2">
-  <script defer src="./js/solar.js?v=0.2.2"></script>
-  <script defer src="./js/app.js?v=0.2.2"></script>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#102e35">
+<title>ひだまり | SunTrace v0.3</title>
+<link rel="stylesheet" href="./css/style.css?v=0.3.0">
+<script defer src="./js/solar.js?v=0.3.0"></script><script defer src="./js/app.js?v=0.3.0"></script>
 </head>
 <body>
-  <main class="app">
-    <video id="camera" autoplay muted playsinline aria-label="背面カメラ映像"></video>
-    <div class="shade"></div>
-    <header><div class="brand">☀ ひだまり <small>SunTrace v0.2 / 位置・太陽の検証</small></div><div id="status" role="status">開始待ち</div></header>
-    <div class="view" id="view" aria-label="カメラ上の太陽位置の試験表示">
-      <div class="crosshair">＋</div>
-      <div id="sunMarker" class="sunMarker" hidden><span>☀</span><small>太陽（試験表示）</small></div>
-      <div id="offscreen" class="offscreen"></div>
-    </div>
-    <section class="panel">
-      <div class="actions"><button id="start">カメラ・センサーを開始</button><button id="stop" disabled>停止</button></div>
-      <div class="location"><div><label>緯度 / 経度</label><strong id="coords">未取得</strong><small id="gpsAccuracy">位置精度: —</small></div><button id="locate">現在地取得</button></div>
-      <label for="dateTime">予測する日時（iPhoneのローカル時間）</label>
-      <div class="dateRow"><input type="datetime-local" id="dateTime"><button id="now">現在時刻</button></div>
-      <div class="grid">
-        <div><label>太陽方位（北=0°, 時計回り）</label><strong id="sunAz">—</strong></div>
-        <div><label>太陽高度（水平=0°）</label><strong id="sunAlt">—</strong></div>
-        <div><label>コンパス方位（参考値）</label><strong id="heading">—</strong><small id="accuracy">精度: —</small></div>
-        <div><label>beta（端末前後傾き）</label><strong id="beta">—</strong></div>
-        <div><label>alpha / gamma</label><strong id="other">—</strong></div>
-        <div><label>画面回転</label><strong id="screen">—</strong></div>
-      </div>
-      <details><summary>AR仮表示の補正（試験用）</summary>
-        <label for="azOffset">水平補正 <span id="azOffsetValue">0°</span></label><input id="azOffset" type="range" min="-90" max="90" step="1" value="0">
-        <label for="altOffset">垂直補正 <span id="altOffsetValue">0°</span></label><input id="altOffset" type="range" min="-90" max="90" step="1" value="0">
-        <button id="resetOffset">補正をリセット</button>
-      </details>
-      <p class="note">⚠ 太陽の方位・高度は天文計算値です。一方、カメラ上の☀マーカーは、端末姿勢と仮の画角から描く<strong>未校正の試験表示</strong>です。屋根との交差時刻の判定にはまだ使わないでください。位置情報は端末内で計算するだけで送信しません。</p>
-      <p id="message" class="message" role="status">最初に「開始」と「現在地取得」を押してください。</p>
-    </section>
-  </main>
-</body>
-</html>
+<main class="app">
+<video id="camera" autoplay playsinline muted aria-label="背面カメラ"></video><div class="shade"></div>
+<header><div class="brand">☀ ひだまり <small>SunTrace v0.3 / カメラ選択検証</small></div><span id="status">開始待ち</span></header>
+<div class="view" id="view"><div class="crosshair">＋</div><div id="sunMarker" class="sunMarker" hidden>☀<small>試験表示</small></div><div id="offscreen" class="offscreen"></div></div>
+<section class="panel">
+<div class="actions"><button id="start">開始</button><button id="stop" disabled>停止</button><button id="locate">GPS取得</button></div>
+<div class="cameraRow"><label for="cameraSelect">カメラ選択（選択可能な候補）</label><div class="selectRow"><select id="cameraSelect" disabled><option>開始後に一覧取得</option></select><button id="refreshCameras" disabled>再取得</button></div><p id="cameraInfo" class="minor">カメラ起動後に詳細を表示</p></div>
+<div class="dateRow"><label for="dateTime">予測日時</label><input type="datetime-local" id="dateTime"><button id="now">現在</button></div>
+<div class="metrics"><span>太陽方位 <b id="sunAz">—</b></span><span>太陽高度 <b id="sunAlt">—</b></span><span>端末方位 <b id="heading">—</b></span></div>
+<details id="details"><summary>詳細データ・補正を開く</summary>
+<div class="grid"><div><label>緯度 / 経度</label><strong id="coords">未取得</strong><small id="gpsAccuracy">精度: —</small></div><div><label>コンパス精度</label><strong id="accuracy">—</strong></div><div><label>beta（前後）</label><strong id="beta">—</strong></div><div><label>alpha / gamma</label><strong id="other">—</strong></div><div><label>画面回転</label><strong id="screen">—</strong></div><div><label>映像解像度</label><strong id="resolution">—</strong></div></div>
+<label for="azOffset">水平補正 <span id="azOffsetValue">0°</span></label><input id="azOffset" type="range" min="-90" max="90" value="0">
+<label for="altOffset">垂直補正 <span id="altOffsetValue">0°</span></label><input id="altOffset" type="range" min="-90" max="90" value="0">
+<button id="resetOffset">補正リセット</button>
+<p class="minor">AR表示は未校正です。カメラ光軸・画角・歪みの補正前なので、日照時間の判定には使えません。カメラ名に「Ultra Wide」などがあっても、0.5×の実視野になったかは映像で確認してください。</p>
+</details>
+<p class="message" id="message" role="status">「開始」を押してカメラと姿勢センサーを許可してください。</p>
+</section>
+</main></body></html>
