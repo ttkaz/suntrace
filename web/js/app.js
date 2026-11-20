@@ -1,77 +1,96 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let stream = null;
-let receivingOrientation = false;
-let orientationWatchdog = null;
-const fmt = value => Number.isFinite(value) ? `${value.toFixed(1)}°` : '—';
-const message = text => { $('message').textContent = text; };
-function onOrientation(e) {
-  receivingOrientation = true;
-  $('status').textContent = 'センサー受信中';
-  const heading = Number.isFinite(e.webkitCompassHeading) ? e.webkitCompassHeading : null;
-  $('heading').textContent = fmt(heading);
-  $('accuracy').textContent = `精度: ${fmt(e.webkitCompassAccuracy)}`;
-  $('alpha').textContent = fmt(e.alpha);
-  $('beta').textContent = fmt(e.beta);
-  $('gamma').textContent = fmt(e.gamma);
-  // alpha is not converted to north-up heading: its reference frame differs by browser.
+const fmt = n => Number.isFinite(n) ? `${n.toFixed(1)}°` : '—';
+let stream=null, receiving=false, watchdog=null, location=null, heading=null, beta=null;
+const message = s => $('message').textContent=s;
+function updateScreen(){ $('screen').textContent=`${screen.orientation?.angle ?? window.orientation ?? 0}°`; }
+function setNow(){
+  const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000);
+  $('dateTime').value=local.toISOString().slice(0,16); updateSun();
 }
-function updateScreen() {
-  const angle = screen.orientation?.angle ?? window.orientation ?? 0;
-  $('screen').textContent = `画面回転: ${angle}°`;
+function shortestAngle(a){return ((a+540)%360)-180;}
+function updateMarker(sun){
+  const marker=$('sunMarker'), warning=$('offscreen');
+  marker.hidden=true;warning.textContent='';
+  if (!sun || heading===null || beta===null || sun.altitude<0) return;
+  // EXPERIMENTAL ONLY: compass heading is not camera-axis heading; beta to camera
+  // elevation varies by device orientation. FOV is an unmeasured approximation.
+  const angle=screen.orientation?.angle ?? window.orientation ?? 0;
+  if(angle!==0){warning.textContent='AR仮表示は縦向きのみ';return;}
+  const view=$('view').getBoundingClientRect();
+  const relativeAz=shortestAngle(sun.azimuth-heading-Number($('azOffset').value));
+  const cameraAltitude=beta-90+Number($('altOffset').value);
+  const relativeAlt=sun.altitude-cameraAltitude;
+  const x=view.width/2+(relativeAz/60)*view.width;
+  const y=view.height/2-(relativeAlt/75)*view.height;
+  if(x<0||x>view.width||y<0||y>view.height){
+    warning.textContent=`太陽は画面外（水平差 ${fmt(relativeAz)} / 高度差 ${fmt(relativeAlt)}）`;
+    return;
+  }
+  marker.style.left=`${x}px`;marker.style.top=`${y}px`;marker.hidden=false;
 }
-function stop() {
-  window.removeEventListener('deviceorientation', onOrientation);
-  window.removeEventListener('deviceorientationabsolute', onOrientation);
-  clearTimeout(orientationWatchdog);
-  stream?.getTracks().forEach(track => track.stop());
-  stream = null;
-  $('camera').srcObject = null;
-  $('start').disabled = false;
-  $('stop').disabled = true;
-  $('status').textContent = '停止';
-  receivingOrientation = false;
-  message('停止しました。');
+function updateSun(){
+  if(!location){$('sunAz').textContent='—';$('sunAlt').textContent='—';updateMarker(null);return;}
+  const date=new Date($('dateTime').value);
+  const sun=window.SunTraceSolar.position(date,location.latitude,location.longitude);
+  $('sunAz').textContent=fmt(sun?.azimuth);
+  $('sunAlt').textContent=fmt(sun?.altitude);
+  updateMarker(sun);
 }
-async function start() {
-  $('start').disabled = true;
-  $('status').textContent = '権限確認中';
-  // Must be called synchronously as part of the button's user gesture,
-  // before any await (including the camera permission request).
-  let orientationPermission;
-  try {
-    orientationPermission = (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function')
-      ? DeviceOrientationEvent.requestPermission()
-      : Promise.resolve('granted');
-  } catch (e) {
-    orientationPermission = Promise.reject(e);
-  }
-  const permission = await orientationPermission.catch(e => `error: ${e.message}`);
-  if (permission === 'granted') {
-    window.addEventListener('deviceorientation', onOrientation);
-  } else {
-    message(`姿勢センサーの許可がありません: ${permission}`);
-  }
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('カメラAPIが利用できません。HTTPSとSafariを確認してください。');
-    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
-    $('camera').srcObject = stream;
-    await $('camera').play();
-    $('status').textContent = permission === 'granted' ? 'カメラ起動・センサー待ち' : 'カメラのみ起動';
-    if (permission === 'granted') message('iPhoneを動かし、数値の変化を確認してください。');
-  } catch (e) {
-    $('status').textContent = 'カメラ起動失敗';
-    message(`カメラ: ${e.name || 'Error'} / ${e.message}`);
-  }
-  $('stop').disabled = false;
-  if (permission === 'granted') {
-    orientationWatchdog = setTimeout(() => {
-      if (!receivingOrientation) message('姿勢データが届いていません。Safariの設定・端末の対応状況を確認してください。');
-    }, 3000);
-  }
+function onOrientation(e){
+  receiving=true;$('status').textContent='センサー受信中';
+  heading=Number.isFinite(e.webkitCompassHeading)?e.webkitCompassHeading:null;
+  beta=Number.isFinite(e.beta)?e.beta:null;
+  $('heading').textContent=fmt(heading);
+  $('accuracy').textContent=`精度: ${fmt(e.webkitCompassAccuracy)}`;
+  $('beta').textContent=fmt(beta);
+  $('other').textContent=`${fmt(e.alpha)} / ${fmt(e.gamma)}`;
+  updateSun();
 }
-$('start').addEventListener('click', start);
-$('stop').addEventListener('click', stop);
-window.addEventListener('orientationchange', updateScreen);
-updateScreen();
+function stop(){
+  window.removeEventListener('deviceorientation',onOrientation);
+  clearTimeout(watchdog);stream?.getTracks().forEach(t=>t.stop());stream=null;
+  $('camera').srcObject=null;$('start').disabled=false;$('stop').disabled=true;
+  receiving=false;heading=null;beta=null;$('status').textContent='停止';updateSun();message('停止しました。');
+}
+async function start(){
+  $('start').disabled=true;$('status').textContent='権限確認中';
+  let permissionPromise;
+  try{
+    permissionPromise=typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'
+      ?DeviceOrientationEvent.requestPermission():Promise.resolve('granted');
+  }catch(e){permissionPromise=Promise.reject(e);}
+  const perm=await permissionPromise.catch(e=>`error: ${e.message}`);
+  if(perm==='granted')window.addEventListener('deviceorientation',onOrientation);
+  else message(`姿勢センサー: ${perm}`);
+  try{
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('カメラAPIが使えません。HTTPSを確認してください。');
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});
+    $('camera').srcObject=stream;await $('camera').play();
+    $('status').textContent=perm==='granted'?'カメラ起動・センサー待ち':'カメラのみ起動';
+    if(perm==='granted')message('カメラ・姿勢取得を開始しました。次に位置情報を取得してください。');
+  }catch(e){$('status').textContent='カメラ起動失敗';message(`カメラ: ${e.message}`);}
+  $('stop').disabled=false;
+  if(perm==='granted')watchdog=setTimeout(()=>{if(!receiving)message('姿勢センサーが未受信です。Safariで開いて許可を確認してください。');},3500);
+}
+function locate(){
+  if(!navigator.geolocation){message('位置情報APIが利用できません。');return;}
+  $('locate').disabled=true;message('位置情報を取得しています…');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    location={latitude:pos.coords.latitude,longitude:pos.coords.longitude};
+    $('coords').textContent=`${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`;
+    $('gpsAccuracy').textContent=`位置精度（推定）: ±${Math.round(pos.coords.accuracy)}m`;
+    $('locate').disabled=false;message('位置情報を取得しました。日時を変えて太陽方位・高度を確認できます。');updateSun();
+  },err=>{$('locate').disabled=false;message(`位置情報エラー（${err.code}）: ${err.message}`);},
+  {enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+}
+$('start').addEventListener('click',start);
+$('stop').addEventListener('click',stop);
+$('locate').addEventListener('click',locate);
+$('now').addEventListener('click',setNow);
+$('dateTime').addEventListener('change',updateSun);
+for(const id of ['azOffset','altOffset'])$(id).addEventListener('input',()=>{$(id+'Value').textContent=`${$(id).value}°`;updateSun();});
+$('resetOffset').addEventListener('click',()=>{for(const id of ['azOffset','altOffset']){$(id).value=0;$(id+'Value').textContent='0°';}updateSun();});
+window.addEventListener('orientationchange',()=>{updateScreen();updateSun();});
+window.addEventListener('resize',updateSun);
+updateScreen();setNow();
